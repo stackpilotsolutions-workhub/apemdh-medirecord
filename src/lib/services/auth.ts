@@ -39,21 +39,43 @@ export async function logAuditEvent(
 }
 
 export async function login(email: string, password: string, ipAddress?: string): Promise<User> {
+  console.log('====== [LOGIN DEBUG START] ======');
+  console.log('Attempting login for:', email);
+
   const db = await getDb();
+  
+  console.log('Total users loaded in DB object:', db?.users?.length || 0);
+  console.log('Emails found in DB:', db?.users?.map((u) => u.email) || []);
+
   const userRecord = db.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
 
   if (!userRecord) {
+    console.error('❌ LOGIN FAIL: Email not found in loaded DB array.');
+    console.log('====== [LOGIN DEBUG END] ======');
     throw new Error('Invalid email or password.');
   }
 
+  console.log('User found:', userRecord.email, '| Role:', userRecord.role, '| Status:', userRecord.status);
+
   if (userRecord.status === 'DEACTIVATED') {
+    console.error('❌ LOGIN FAIL: Account status is DEACTIVATED.');
+    console.log('====== [LOGIN DEBUG END] ======');
     throw new Error('This account has been deactivated. Please contact the administrator.');
   }
 
   const hashedPassword = hashPassword(password);
+  console.log('Password provided:', password);
+  console.log('Computed hash:   ', hashedPassword);
+  console.log('Stored DB hash:  ', userRecord.passwordHash);
+
   if (userRecord.passwordHash !== hashedPassword) {
+    console.error('❌ LOGIN FAIL: Password hash mismatch.');
+    console.log('====== [LOGIN DEBUG END] ======');
     throw new Error('Invalid email or password.');
   }
+
+  console.log('✅ LOGIN SUCCESS: Credentials verified.');
+  console.log('====== [LOGIN DEBUG END] ======');
 
   // Create session
   const sessionData: SessionData = {

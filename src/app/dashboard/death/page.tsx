@@ -36,6 +36,7 @@ import {
   Archive,
   UploadCloud,
   Loader2,
+  ExternalLink,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -79,8 +80,18 @@ export default function DeathRegistryPage() {
   }, [searchParams]);
 
   useEffect(() => {
+    if (selectedRecord) {
+      const causes = selectedRecord.details?.causesOfDeath;
+      const initialCause =
+        causes?.immediateCause ||
+        '';
+
+      setCauseInput(initialCause);
+    }
+  }, [selectedRecord]);
+
+  useEffect(() => {
     fetchRecords();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, statusFilter]);
 
   const handleAction = async (actionFn: (id: string) => Promise<DeathRecord>, successMsg: string) => {
@@ -424,9 +435,19 @@ export default function DeathRegistryPage() {
                       <span className="text-[10px] text-slate-400 font-bold">{selectedRecord.certificateNumber}</span>
                     </div>
                   </div>
-                  <button onClick={() => setSelectedRecord(null)} className="p-1 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-slate-600">
-                    <X className="h-5 w-5" />
-                  </button>
+                  
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/dashboard/death/view?id=${selectedRecord.id}`}
+                      className="text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      <span>View Full Details</span>
+                    </Link>
+                    <button onClick={() => setSelectedRecord(null)} className="p-1 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-slate-600">
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Duplicate Alert */}
@@ -637,8 +658,12 @@ export default function DeathRegistryPage() {
                 {/* Physician certify details form */}
                 {selectedRecord.status === 'PENDING_CERTIFICATION' && (user?.role === 'PHYSICIAN' || user?.role === 'ADMIN') && (
                   <form onSubmit={handlePhysicianCertify} className="space-y-3 relative">
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-600 block">Attending Cause of Death Certificate *</label>
+                    
+                    {/* Cause of Death Input Field */}
+                    <div className="space-y-1 relative">
+                      <label className="text-xs font-semibold text-slate-600 block">
+                        Attending Cause of Death Certificate *
+                      </label>
                       <input
                         type="text"
                         value={causeInput}
@@ -647,10 +672,30 @@ export default function DeathRegistryPage() {
                         className="input-field"
                         required
                       />
+
+                      {/* Suggestions list - now anchored directly below causeInput */}
+                      {icdSuggestions.length > 0 && (
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto z-50 text-xs divide-y divide-slate-100">
+                          {icdSuggestions.map((item) => (
+                            <button
+                              key={item.code}
+                              type="button"
+                              onClick={() => selectIcdSuggestion(item)}
+                              className="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors block"
+                            >
+                              <span className="text-rose-700 font-bold block">{item.code}</span>
+                              <span className="text-slate-600 block text-[11px] mt-0.5 leading-snug">{item.diagnosis}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="space-y-1 relative">
-                      <label className="text-xs font-semibold text-slate-600 block">WHO Classification Code (ICD-10) *</label>
+                    {/* ICD-10 Code Input Field */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-600 block">
+                        WHO Classification Code (ICD-10) *
+                      </label>
                       <input
                         type="text"
                         value={icd10Input}
@@ -659,23 +704,6 @@ export default function DeathRegistryPage() {
                         className="input-field"
                         required
                       />
-
-                      {/* Suggestions list */}
-                      {icdSuggestions.length > 0 && (
-                        <div className="absolute left-0 right-0 bottom-full mb-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 overflow-y-auto z-50 text-xs">
-                          {icdSuggestions.map((item) => (
-                            <button
-                              key={item.code}
-                              type="button"
-                              onClick={() => selectIcdSuggestion(item)}
-                              className="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-slate-50 last:border-0 block font-semibold"
-                            >
-                              <span className="text-rose-700 font-bold block">{item.code}</span>
-                              <span className="text-slate-500 block text-[10px] mt-0.5">{item.diagnosis}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
                     </div>
 
                     <button

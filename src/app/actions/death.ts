@@ -5,7 +5,7 @@ import { getCurrentUser, logAuditEvent } from '@/lib/services/auth';
 import { DeathRecord, RecordStatus } from '@/lib/types';
 import { uploadFile } from '@/lib/services/storage';
 
-// Sample common ICD-10 codes dataset for autocomplete search
+// Sample common ICD-10 codes dataset as local fallback
 const ICD10_DATASET = [
   { code: 'I21.9', diagnosis: 'Acute Myocardial Infarction, Unspecified (Heart Attack)' },
   { code: 'J18.9', diagnosis: 'Pneumonia, Unspecified' },
@@ -20,8 +20,39 @@ const ICD10_DATASET = [
 ];
 
 export async function searchICD10Action(query: string): Promise<{ code: string; diagnosis: string }[]> {
-  if (!query) return ICD10_DATASET.slice(0, 5);
-  const q = query.toLowerCase();
+  const cleanQuery = query?.trim();
+
+  // Return top 5 local samples if search input is empty
+  if (!cleanQuery) {
+    return ICD10_DATASET.slice(0, 5);
+  }
+
+  try {
+    const response = await fetch(
+      `https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code,name&terms=${encodeURIComponent(cleanQuery)}&maxList=10`
+    );
+
+    if (!response.ok) {
+      throw new Error(`API returned status ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    // Index 3 contains arrays formatted as [code, diagnosis]
+    const results: [string, string][] = data[3] || [];
+
+    if (results.length > 0) {
+      return results.map(([code, diagnosis]) => ({
+        code,
+        diagnosis,
+      }));
+    }
+  } catch (error) {
+    console.warn('ICD-10 API fetch failed, switching to local dataset:', error);
+  }
+
+  // Fallback: Local filter if API returns no results or throws an error
+  const q = cleanQuery.toLowerCase();
   return ICD10_DATASET.filter(
     (item) => item.code.toLowerCase().includes(q) || item.diagnosis.toLowerCase().includes(q)
   );
@@ -91,13 +122,46 @@ export async function checkDuplicateDeathAction(
 }
 
 export async function createDeathRecordAction(
-  data: Omit<DeathRecord, 'id' | 'certificateNumber' | 'status' | 'supportingDocuments' | 'causeOfDeath' | 'icd10Code' | 'duplicateStatus' | 'createdAt' | 'updatedAt'>
+  data: Omit<
+    DeathRecord,
+    | 'id'
+    | 'certificateNumber'
+    | 'status'
+    | 'createdBy'
+    | 'supportingDocuments'
+    | 'causeOfDeath'
+    | 'icd10Code'
+    | 'duplicateStatus'
+    | 'createdAt'
+    | 'updatedAt'
+  >
 ): Promise<DeathRecord> {
   const user = await getCurrentUser();
   if (!user) throw new Error('Unauthorized');
   if (user.role !== 'MRO' && user.role !== 'ADMIN') {
     throw new Error('Only Medical Records Officers or Admins can register death certificates.');
   }
+
+  // 🧪 TEST LOG 1: Top-level payload fields
+  console.log('\n==================================================');
+  console.log('📥 INCOMING DATA PAYLOAD:');
+  console.log('Top-Level Fields:', {
+    deceasedName: data.deceasedName,
+    deceasedAge: data.deceasedAge,
+    deceasedGender: data.deceasedGender,
+    dateOfDeath: data.dateOfDeath,
+    placeOfDeath: data.placeOfDeath,
+    notes: data.notes,
+  });
+
+  // 🧪 TEST LOG 2: Inspect structured JSON inside `details`
+  if (data.details) {
+    console.log('\n🔍 PARSED DETAILS PAYLOAD:');
+    console.dir(data.details, { depth: null, colors: true });
+  } else {
+    console.warn('⚠️ data.details is empty!');
+  }
+  console.log('==================================================\n');
 
   const db = await getDb();
 
@@ -110,13 +174,16 @@ export async function createDeathRecordAction(
   const { isDuplicate } = await checkDuplicateDeathAction(data.deceasedName, data.dateOfDeath);
   const duplicateStatus = isDuplicate ? 'POTENTIAL_DUPLICATE' : 'UNIQUE';
 
+  const extractedCause = '';
+
   const newRecord: DeathRecord = {
     ...data,
     id: `dr_${Date.now()}`,
     certificateNumber,
     status: 'DRAFT',
-    causeOfDeath: '', // to be filled by Physician
-    icd10Code: '',     // to be filled by Physician
+    createdBy: user.name || user.id, // 👈 Added createdBy field
+    causeOfDeath: extractedCause,
+    icd10Code: '',
     supportingDocuments: [],
     duplicateStatus,
     createdAt: new Date().toISOString(),
@@ -353,4 +420,26 @@ export async function uploadDeathFileAction(
     console.error('uploadDeathFileAction error:', err);
     return { success: false, error: err.message || 'File upload failed.' };
   }
+}
+
+export async function getCertifierDetailsAction(identifier: string): Promise<{
+    titlePosition: string;
+    address: string;
+  }> {
+  if (!identifier) return { titlePosition: '', address: '' };
+
+  const db = await getDb();
+  const target = identifier.trim().toLowerCase();
+
+  const certifier = db.users.find(
+    (u) =>
+      u.name?.toLowerCase() === target ||
+      u.email?.toLowerCase() === target ||
+      u.id?.toLowerCase() === target
+  );
+
+  return {
+    titlePosition: certifier?.title_position || certifier?.role || '',
+    address: certifier?.address || '',
+  };
 }

@@ -34,6 +34,8 @@ import {
   Archive,
   UploadCloud,
   Loader2,
+  ExternalLink,
+  UserCheck, // Added missing Lucide Icon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -45,11 +47,27 @@ export default function BirthRegistryPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [selectedRecord, setSelectedRecord] = useState<BirthRecord | null>(null);
-  
+
+  // Attendant Certification Snapshot State Hooks
+  const [attendantName, setAttendantName] = useState('');
+  const [attendantPosition, setAttendantPosition] = useState('');
+  const [attendantAddress, setAttendantAddress] = useState('');
+
   // File upload state for MRO verification
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [newDocName, setNewDocName] = useState('');
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string } | null>(null);
+
+  // Pre-fill attendant details when a record or user state updates
+  useEffect(() => {
+    if (selectedRecord && user) {
+      setAttendantName(selectedRecord.attendantName || user.name || '');
+      setAttendantPosition(
+        selectedRecord.attendantPosition || user.title_position || 'Attending Physician'
+      );
+      setAttendantAddress(selectedRecord.attendantAddress || user.address || '');
+    }
+  }, [selectedRecord, user]);
 
   const fetchRecords = async () => {
     try {
@@ -77,7 +95,11 @@ export default function BirthRegistryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, statusFilter]);
 
-  const handleAction = async (actionFn: (id: string) => Promise<BirthRecord>, successMsg: string) => {
+  // Replace your handleAction definition with this:
+  const handleAction = async (
+    actionFn: (id: string, ...args: any[]) => Promise<BirthRecord>, 
+    successMsg: string
+  ) => {
     if (!selectedRecord) return;
     try {
       setLoading(true);
@@ -87,6 +109,28 @@ export default function BirthRegistryPage() {
       fetchRecords();
     } catch (err: any) {
       toast.error(err.message || 'Workflow transition failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Submit Handler for Attendant Certification
+  const handleCertifySubmit = async () => {
+    if (!selectedRecord) return;
+    try {
+      setLoading(true);
+      const certificationData = {
+        attendant_name: attendantName,
+        attendant_position: attendantPosition,
+        attendant_address: attendantAddress,
+      };
+
+      const updated = await certifyBirthRecordAction(selectedRecord.id, certificationData);
+      setSelectedRecord(updated);
+      toast.success('Medical details certified successfully.');
+      fetchRecords();
+    } catch (err: any) {
+      toast.error(err.message || 'Certification failed.');
     } finally {
       setLoading(false);
     }
@@ -355,6 +399,7 @@ export default function BirthRegistryPage() {
               onClick={() => setSelectedRecord(null)}
               className="fixed inset-0 bg-slate-900 z-40"
             />
+
             {/* Drawer */}
             <motion.div
               initial={{ x: '100%' }}
@@ -364,7 +409,6 @@ export default function BirthRegistryPage() {
               className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-white z-50 shadow-2xl p-6 overflow-y-auto flex flex-col justify-between"
             >
               <div className="space-y-6">
-                
                 {/* Header */}
                 <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                   <div className="flex items-center gap-2">
@@ -374,10 +418,27 @@ export default function BirthRegistryPage() {
                       <span className="text-[10px] text-slate-400 font-bold">{selectedRecord.certificateNumber}</span>
                     </div>
                   </div>
-                  <button onClick={() => setSelectedRecord(null)} className="p-1 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-slate-600">
+                  <button
+                    onClick={() => setSelectedRecord(null)}
+                    className="p-1 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-slate-600"
+                  >
                     <X className="h-5 w-5" />
                   </button>
                 </div>
+
+                {/* View Full Details Page Link */}
+                <a
+                  href={`/dashboard/birth/view?id=${selectedRecord.id}`}
+                  className="flex items-center justify-between p-3 bg-teal-50/60 hover:bg-teal-50 border border-teal-100/80 rounded-xl transition-colors group cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <ExternalLink className="h-4 w-4 text-teal-700 group-hover:scale-105 transition-transform" />
+                    <span className="text-xs font-bold text-teal-900">View Full Details Page</span>
+                  </div>
+                  <span className="text-[10px] text-teal-700 font-medium group-hover:underline flex items-center gap-0.5">
+                    Open page <ArrowRight className="h-3 w-3 inline" />
+                  </span>
+                </a>
 
                 {/* Duplicate Banner Alert */}
                 {selectedRecord.duplicateStatus === 'POTENTIAL_DUPLICATE' && (
@@ -475,7 +536,6 @@ export default function BirthRegistryPage() {
                   <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">Workflow Verification Audit</h4>
                   
                   <div className="relative border-l-2 border-teal-100 pl-4 space-y-4 text-xs ml-2">
-                    
                     {/* Draft Creation */}
                     <div className="relative">
                       <div className="absolute -left-[23px] top-0 h-3 w-3 rounded-full bg-teal-500 ring-4 ring-white" />
@@ -548,10 +608,8 @@ export default function BirthRegistryPage() {
                         )}
                       </div>
                     </div>
-
                   </div>
                 </div>
-
               </div>
 
               {/* Action Operations Area */}
@@ -568,15 +626,77 @@ export default function BirthRegistryPage() {
                   </button>
                 )}
 
-                {/* Physician certify details */}
+                {/* Physician certify details + Inline Form Fields */}
                 {selectedRecord.status === 'PENDING_CERTIFICATION' && (user?.role === 'PHYSICIAN' || user?.role === 'ADMIN') && (
-                  <button
-                    onClick={() => handleAction(certifyBirthRecordAction, 'Medical details certified successfully.')}
-                    className="btn-primary w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 flex items-center justify-center gap-2"
-                  >
-                    <FileCheck className="h-4 w-4" />
-                    <span>Certify Medical Birth Details</span>
-                  </button>
+                  <div className="space-y-4">
+                    <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-3">
+                      <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-2">
+                        <UserCheck className="h-4 w-4 text-emerald-600" />
+                        Attendant Certification Details
+                      </h5>
+
+                      {/* Attendant Name */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                          Full Name *
+                        </label>
+                        <input
+                          type="text"
+                          value={attendantName}
+                          onChange={(e) => setAttendantName(e.target.value)}
+                          placeholder="e.g. Dr. Maria Santos, MD"
+                          className="w-full text-xs px-3 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-semibold text-slate-800"
+                        />
+                      </div>
+
+                      {/* Attendant Title/Position */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                          Title or Position *
+                        </label>
+                        <input
+                          type="text"
+                          value={attendantPosition}
+                          onChange={(e) => setAttendantPosition(e.target.value)}
+                          placeholder="e.g. Attending Physician / OB-GYN"
+                          className="w-full text-xs px-3 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-semibold text-slate-800"
+                        />
+                      </div>
+
+                      {/* Attendant Facility/Clinic Address */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                          Address *
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={attendantAddress}
+                          onChange={(e) => setAttendantAddress(e.target.value)}
+                          placeholder="e.g. Alfonso Ponce Enrile Memorial District Hospital, Gonzaga, Cagayan"
+                          className="w-full text-xs px-3 py-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-semibold text-slate-800 resize-none"
+                        />
+                      </div>
+
+                      {/* Automatic Date Indicator */}
+                      <div className="text-[10px] text-slate-400 flex items-center justify-between pt-1">
+                        <span>Certification Date:</span>
+                        <span className="font-bold text-slate-600">{new Date().toLocaleDateString()}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleCertifySubmit}
+                      disabled={loading || !attendantName || !attendantPosition || !attendantAddress}
+                      className="btn-primary w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                    >
+                      {loading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <FileCheck className="h-4 w-4" />
+                      )}
+                      <span>Certify Medical Birth Details</span>
+                    </button>
+                  </div>
                 )}
 
                 {/* MRO Upload files and Complete verification */}

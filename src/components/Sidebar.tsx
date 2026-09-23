@@ -8,13 +8,13 @@ import {
   LayoutDashboard,
   Baby,
   FileText,
+  FileCheck, 
   Users,
   HardDrive,
   History,
   BarChart3,
   Settings,
   LogOut,
-  HeartPulse,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -49,7 +49,6 @@ export default function Sidebar({ collapsed, setCollapsed, className }: SidebarP
     LCR: 'bg-amber-50 text-amber-700 border-amber-200',
   };
 
-  // Define navigation items and which roles can access them
   const navItems = [
     {
       title: 'Dashboard',
@@ -58,16 +57,22 @@ export default function Sidebar({ collapsed, setCollapsed, className }: SidebarP
       roles: ['ADMIN', 'MRO', 'PHYSICIAN', 'CRO', 'LCR'],
     },
     {
-      title: 'Birth Certificates',
+      title: 'Birth Records',
       href: '/dashboard/birth',
       icon: Baby,
       roles: ['ADMIN', 'MRO', 'PHYSICIAN', 'CRO', 'LCR'],
     },
     {
-      title: 'Death Certificates',
+      title: 'Death Records',
       href: '/dashboard/death',
       icon: FileText,
       roles: ['ADMIN', 'MRO', 'PHYSICIAN', 'CRO', 'LCR'],
+    },
+    {
+      title: 'Certificate Requests',
+      href: '/dashboard/requests',
+      icon: FileCheck,
+      roles: ['ADMIN', 'CRO', 'LCR'], 
     },
     {
       title: 'Reports & Analytics',
@@ -110,16 +115,32 @@ export default function Sidebar({ collapsed, setCollapsed, className }: SidebarP
       className={`bg-white border-r border-slate-200 flex flex-col h-screen fixed left-0 top-0 z-30 shrink-0 select-none shadow-sm shadow-slate-100 ${className || ''}`}
     >
       {/* Sidebar Header */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-slate-100">
-        <div className="flex items-center gap-2.5 overflow-hidden flex-1">
+      <div className={`h-16 flex items-center border-b border-slate-100 transition-all duration-300 ${
+        collapsed ? 'justify-center px-2' : 'justify-between px-4'
+      }`}>
+        <div className={`flex items-center gap-3 overflow-hidden flex-1 py-1 ${
+          collapsed ? 'justify-center' : ''
+        }`}>
           <img 
             src="/logo.png" 
             alt="MediRecord Logo" 
-            className={`object-contain transition-all duration-300 ${
-              collapsed ? 'h-8 w-8' : 'h-10 w-auto max-w-[130px]'
+            className={`object-contain transition-all duration-300 shrink-0 ${
+              collapsed ? 'h-9 w-9' : 'h-16 w-auto max-w-[130px]'
             }`} 
           />
+
+          {!collapsed && (
+            <div className="flex flex-col justify-center border-l border-slate-200/80 pl-0 leading-tight transition-opacity duration-300">
+              <span className="text-[15px] font-black text-slate-800 tracking-tight">
+                MediRecord
+              </span>
+              <span className="text-[11px] font-bold text-teal-700 tracking-tight">
+                APEMDH Portal
+              </span>
+            </div>
+          )}
         </div>
+
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="p-1.5 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-lg hidden md:block shrink-0"
@@ -221,7 +242,6 @@ export default function Sidebar({ collapsed, setCollapsed, className }: SidebarP
       <AnimatePresence>
         {showSignOutConfirm && (
           <>
-            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 0.3 }}
@@ -230,7 +250,6 @@ export default function Sidebar({ collapsed, setCollapsed, className }: SidebarP
               className="fixed inset-0 bg-slate-900 z-50"
             />
             
-            {/* Modal Box */}
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}

@@ -5,6 +5,18 @@ import { getCurrentUser, logAuditEvent } from '@/lib/services/auth';
 import { BirthRecord, RecordStatus } from '@/lib/types';
 import { uploadFile } from '@/lib/services/storage';
 
+export async function getBirthRecordForPDFAction(id: string): Promise<BirthRecord | null> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Unauthorized');
+
+  const db = await getDb();
+  const record = db.birth_records.find((r) => r.id === id);
+
+  if (!record) return null;
+
+  return record;
+}
+
 export async function getBirthRecordsAction(
   search?: string,
   status?: string
@@ -82,6 +94,21 @@ export async function createBirthRecordAction(
     throw new Error('Only Medical Records Officers or Admins can register birth certificates.');
   }
 
+
+  // 🧪 TEST LOG 2: Inspect all structured JSON details inside `notes`
+  // try {
+  //   if (data.notes) {
+  //     const parsedDetails = JSON.parse(data.notes);
+  //     console.log('\nPARSED DETAILS FROM NOTES:');
+  //     console.dir(parsedDetails, { depth: null, colors: true });
+  //   } else {
+  //     console.warn('data.notes is empty!');
+  //   }
+  // } catch (err) {
+  //   console.error('Failed to parse data.notes as JSON:', err);
+  // }
+  // console.log('==================================================\n');
+
   const db = await getDb();
 
   // Generate certificate number: BR-YYYYMMDD-XXXX
@@ -97,16 +124,19 @@ export async function createBirthRecordAction(
     ...data,
     id: `br_${Date.now()}`,
     certificateNumber,
-    status: 'DRAFT', // MRO starts a draft
+    status: 'DRAFT', 
+    createdBy: user.name,
     supportingDocuments: [],
     duplicateStatus,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
 
+  // Insert into local persistent database service
   db.birth_records.unshift(newRecord);
   await saveDb(db);
 
+  // Log system audit event
   await logAuditEvent(
     user.id,
     user.email,
@@ -179,7 +209,16 @@ export async function submitToPhysicianAction(id: string): Promise<BirthRecord> 
   return record;
 }
 
-export async function certifyBirthRecordAction(id: string): Promise<BirthRecord> {
+export interface AttendantCertificationData {
+  attendant_name: string;
+  attendant_position: string;
+  attendant_address: string;
+}
+
+export async function certifyBirthRecordAction(
+  id: string,
+  data?: AttendantCertificationData
+): Promise<BirthRecord> {
   const user = await getCurrentUser();
   if (!user || (user.role !== 'PHYSICIAN' && user.role !== 'ADMIN')) {
     throw new Error('Unauthorized. Only Physicians can certify medical birth details.');
@@ -189,19 +228,48 @@ export async function certifyBirthRecordAction(id: string): Promise<BirthRecord>
   const record = db.birth_records.find((r) => r.id === id);
   if (!record) throw new Error('Record not found.');
 
-  record.status = 'PENDING_VERIFICATION'; // Certified, goes back to MRO for uploads/checks
-  record.certifiedBy = user.name;
-  record.certifiedAt = new Date().toISOString();
-  record.updatedAt = new Date().toISOString();
+  const now = new Date().toISOString();
 
+  // 1. Basic workflow state updates
+  record.status = 'PENDING_VERIFICATION'; // Moves record back to MRO for uploads/checks
+  record.certifiedBy = user.name;
+  record.certifiedAt = now;
+  record.updatedAt = now;
+
+  // 2. Persist Attendant Certification snapshot data onto top-level fields
+  if (data) {
+    record.attendantName = data.attendant_name;
+    record.attendantPosition = data.attendant_position;
+    record.attendantAddress = data.attendant_address;
+  }
+
+  // 3. Optional: Sync certification details into structured JSON inside `notes`
+  if (record.notes) {
+    try {
+      const parsedNotes = JSON.parse(record.notes);
+      parsedNotes.attendant = {
+        ...parsedNotes.attendant,
+        name: data?.attendant_name || record.attendantName || user.name,
+        title: data?.attendant_position || record.attendantPosition,
+        address: data?.attendant_address || record.attendantAddress,
+        certifiedAt: now,
+      };
+      record.notes = JSON.stringify(parsedNotes);
+    } catch (err) {
+      console.warn('⚠️ Could not sync attendant details to JSON notes:', err);
+    }
+  }
+
+  // Save changes to persistent DB
   await saveDb(db);
 
+  // Audit log event
   await logAuditEvent(
     user.id,
     user.email,
     user.role,
     'RECORD_CERTIFY',
-    `Certified birth details for ${record.childName} (${record.certificateNumber})`
+    `Certified birth details & attendant info for ${record.childName} (${record.certificateNumber})`
   );
 
   return record;
@@ -329,6 +397,22 @@ export async function uploadBirthFileAction(
     console.error('uploadBirthFileAction error:', err);
     return { success: false, error: err.message || 'File upload failed.' };
   }
+}
+
+export async function getCreatorTitlePositionAction(identifier: string): Promise<string> {
+  if (!identifier) return '';
+
+  const db = await getDb();
+  const target = identifier.trim().toLowerCase();
+
+  const creator = db.users.find(
+    (u) =>
+      u.name?.toLowerCase() === target ||
+      u.email?.toLowerCase() === target ||
+      u.id?.toLowerCase() === target
+  );
+
+  return creator?.title_position || creator?.role || '';
 }
 
 

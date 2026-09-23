@@ -11,6 +11,8 @@ export interface ReportRecord {
   status: string;
   details: string;
   createdAt: string;
+  childGender?: 'MALE' | 'FEMALE' | string;
+  deceasedGender?: 'MALE' | 'FEMALE' | string;
 }
 
 export async function generateReportDataAction(
@@ -36,6 +38,7 @@ export async function generateReportDataAction(
         status: b.status,
         details: `Mother: ${b.motherName}, Father: ${b.fatherName || 'N/A'}`,
         createdAt: b.createdAt,
+        childGender: b.childGender, 
       });
     });
   }
@@ -51,6 +54,7 @@ export async function generateReportDataAction(
         status: d.status,
         details: `Age: ${d.deceasedAge}, Cause: ${d.causeOfDeath || 'N/A'} (ICD-10: ${d.icd10Code || 'N/A'})`,
         createdAt: d.createdAt,
+        deceasedGender: d.deceasedGender, // Maps the gender property from DB
       });
     });
   }

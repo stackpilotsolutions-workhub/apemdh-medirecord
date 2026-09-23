@@ -1,6 +1,6 @@
 'use server';
 
-import { getDb, saveDb } from '@/lib/services/db';
+import { getDb, saveDb, hashPassword } from '@/lib/services/db';
 import { getCurrentUser, logAuditEvent } from '@/lib/services/auth';
 import { User, UserRole } from '@/lib/types';
 import { forceResetPassword } from '@/lib/services/auth';
@@ -19,6 +19,8 @@ export async function getUsersAction(): Promise<User[]> {
     email: u.email,
     role: u.role,
     status: u.status,
+    title_position: u.title_position || '',
+    address: u.address || '',
     mustChangePassword: u.mustChangePassword,
     createdAt: u.createdAt,
   }));
@@ -28,6 +30,8 @@ export async function createUserAction(data: {
   name: string;
   email: string;
   role: UserRole;
+  title_position?: string;
+  address?: string;
 }): Promise<User> {
   const adminUser = await getCurrentUser();
   if (!adminUser || adminUser.role !== 'ADMIN') {
@@ -35,20 +39,24 @@ export async function createUserAction(data: {
   }
 
   const db = await getDb();
-  const exists = db.users.some((u) => u.email.toLowerCase() === data.email.toLowerCase());
+  const exists = db.users.some(
+    (u) => u.email.toLowerCase() === data.email.toLowerCase()
+  );
   if (exists) {
     throw new Error('An account with this email address already exists.');
   }
 
   // Pre-configured temporary password
   const tempPassword = `Temp-${Math.random().toString(36).substring(2, 7)}!`;
-  const defaultHash = require('@/lib/services/db').hashPassword(tempPassword);
+  const defaultHash = hashPassword(tempPassword);
 
   const newUser = {
     id: `usr_${Date.now()}`,
     name: data.name,
     email: data.email,
     role: data.role,
+    title_position: data.title_position?.trim() || '',
+    address: data.address?.trim() || '',
     status: 'ACTIVE' as const,
     mustChangePassword: true,
     passwordHash: defaultHash,
@@ -73,6 +81,8 @@ export async function createUserAction(data: {
     email: newUser.email,
     role: newUser.role,
     status: newUser.status,
+    title_position: newUser.title_position,
+    address: newUser.address,
     mustChangePassword: newUser.mustChangePassword,
     createdAt: newUser.createdAt,
     // Hack: Append temporary password so client can display it once
